@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.8] - 2026-06-28
+
 ### Added
 
 - **Optional inbound-media skip.** New `MEDIA_DOWNLOAD_ENABLED` flag (default `true`) lets operators skip downloading inbound media entirely on both the whatsapp-web.js and Baileys engines — useful for text-only or low-resource deployments. When disabled, inbound messages omit the `media` field and report `hasMedia: false` in webhooks and the dashboard. Thanks @spidgrou. (#492)
