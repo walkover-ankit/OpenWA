@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+
+## [0.8.16] - 2026-07-12
+
+### Added
+
 - **Integration SDK v1 `response` contract for inbound routes.** A route may now declare a host-side
   `preflight` (today: `session-alive`, returning 503 for a definitively-dead WhatsApp session) and a
   declarative `ack` (status/body/headers) returned synchronously to the provider. The plugin ALWAYS runs
