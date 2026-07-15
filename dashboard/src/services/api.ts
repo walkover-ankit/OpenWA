@@ -426,12 +426,35 @@ async function requestText(endpoint: string): Promise<string> {
   return response.text();
 }
 
+/**
+ * Walk offset pages until a short page or safety cap. List endpoints default to a
+ * 1000-item window with no `total`, so a single call silently truncates.
+ */
+async function fetchAllPages<T>(
+  fetchPage: (limit: number, offset: number) => Promise<T[]>,
+  pageSize = 1000,
+  maxItems = 50_000,
+): Promise<T[]> {
+  const all: T[] = [];
+  let offset = 0;
+  for (;;) {
+    const page = await fetchPage(pageSize, offset);
+    all.push(...page);
+    if (page.length < pageSize || all.length >= maxItems) break;
+    offset += page.length;
+  }
+  return all;
+}
+
 // =============================================================================
 // Session API
 // =============================================================================
 
 export const sessionApi = {
-  list: () => request<Session[]>('/sessions'),
+  list: () =>
+    fetchAllPages((limit, offset) =>
+      request<Session[]>(`/sessions?limit=${limit}&offset=${offset}`),
+    ),
   get: (id: string) => request<Session>(`/sessions/${id}`),
   create: (name: string) =>
     request<Session>('/sessions', {
@@ -484,7 +507,10 @@ export const sessionApi = {
 
 export const webhookApi = {
   listBySession: (sessionId: string) => request<Webhook[]>(`/sessions/${sessionId}/webhooks`),
-  listAll: () => request<Webhook[]>('/webhooks'),
+  listAll: () =>
+    fetchAllPages((limit, offset) =>
+      request<Webhook[]>(`/webhooks?limit=${limit}&offset=${offset}`),
+    ),
   get: (sessionId: string, id: string) => request<Webhook>(`/sessions/${sessionId}/webhooks/${id}`),
   create: (sessionId: string, data: { url: string; events: string[]; filters?: WebhookFilters | null }) =>
     request<Webhook>(`/sessions/${sessionId}/webhooks`, {

@@ -2,7 +2,7 @@ import { Suspense } from 'react';
 import { lazyWithRetry as lazy } from '../utils/lazyWithRetry';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { MessageSquare, Send, Webhook, Activity, ArrowUpRight, ArrowDownRight, Loader2 } from 'lucide-react';
+import { MessageSquare, Send, Webhook, Activity, Loader2 } from 'lucide-react';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import {
   useSessionsQuery,
@@ -12,6 +12,7 @@ import {
   useStatsOverviewQuery,
 } from '../hooks/queries';
 import { PageHeader } from '../components/PageHeader';
+import { sessionDisplayName } from '../utils/sessionDisplayName';
 import './Dashboard.css';
 
 // recharts is heavy (~150kB gzip); load the analytics section on demand so it never bloats the
@@ -38,6 +39,11 @@ export function Dashboard() {
       ? t('dashboard.loadError')
       : null;
   const webhookCount = webhooks.length;
+  // Prefer READY count for "active" — that's connected WhatsApp sessions. Running engines
+  // (in-memory) include QR/connecting states and previously inflated this KPI with a fake trend.
+  const connectedSessions = stats?.ready ?? 0;
+  const listTotal = stats?.total ?? sessions.length;
+  const listIncomplete = sessions.length < listTotal;
 
   const handleDisconnect = async (id: string) => {
     try {
@@ -50,14 +56,33 @@ export function Dashboard() {
   const statsCards = [
     {
       label: t('dashboard.stats.activeSessions'),
-      value: stats?.active ?? 0,
+      value: connectedSessions,
       icon: MessageSquare,
-      trend: `+${stats?.ready ?? 0}`,
-      trendUp: true,
+      detail:
+        stats != null
+          ? t('dashboard.stats.sessionsDetail', {
+              running: stats.active,
+              total: stats.total,
+            })
+          : undefined,
     },
-    { label: t('dashboard.stats.messagesToday'), value: messagesToday, icon: Send, trend: '0', trendUp: null },
-    { label: t('dashboard.stats.webhooksConfigured'), value: webhookCount, icon: Webhook, trend: '0', trendUp: null },
-    { label: t('dashboard.stats.totalMessages'), value: totalMessages, icon: Activity, trend: '0', trendUp: null },
+    {
+      label: t('dashboard.stats.messagesToday'),
+      value: messagesToday,
+      icon: Send,
+      detail: overview ? t('dashboard.stats.gatewayRecorded') : undefined,
+    },
+    {
+      label: t('dashboard.stats.webhooksConfigured'),
+      value: webhookCount,
+      icon: Webhook,
+    },
+    {
+      label: t('dashboard.stats.totalMessages'),
+      value: totalMessages,
+      icon: Activity,
+      detail: overview ? t('dashboard.stats.gatewayRecorded') : undefined,
+    },
   ];
 
   const formatLastActive = (date?: string) => {
@@ -98,26 +123,21 @@ export function Dashboard() {
         title={t('dashboard.title')}
         subtitle={t('dashboard.subtitle')}
         badge={
-          <span className={`status-badge ${stats && stats.ready > 0 ? 'connected' : 'disconnected'}`}>
-            {stats && stats.ready > 0 ? t('common.connected') : t('common.disconnected')}
+          <span className={`status-badge ${connectedSessions > 0 ? 'connected' : 'disconnected'}`}>
+            {connectedSessions > 0 ? t('common.connected') : t('common.disconnected')}
           </span>
         }
       />
 
       <div className="stats-grid">
-        {statsCards.map(({ label, value, icon: Icon, trend, trendUp }) => (
+        {statsCards.map(({ label, value, icon: Icon, detail }) => (
           <div key={label} className="stat-card">
             <div className="stat-header">
               <span className="stat-label">{label}</span>
               <Icon size={20} className="stat-icon" />
             </div>
             <div className="stat-value">{typeof value === 'number' ? value.toLocaleString() : value}</div>
-            {trend !== '0' && (
-              <div className={`stat-trend ${trendUp ? 'up' : 'down'}`}>
-                {trendUp ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-                {trend}
-              </div>
-            )}
+            {detail && <div className="stat-detail">{detail}</div>}
           </div>
         ))}
       </div>
@@ -130,9 +150,15 @@ export function Dashboard() {
         <div className="section-header">
           <h2>{t('dashboard.sessionsOverview')}</h2>
           <span className="section-subtitle">
-            {t('dashboard.showingSessions', { shown: sessions.length, total: stats?.total ?? 0 })}
+            {t('dashboard.showingSessions', { shown: sessions.length, total: listTotal })}
           </span>
         </div>
+
+        {listIncomplete && (
+          <div className="list-truncated-banner" role="status">
+            {t('dashboard.listIncomplete', { shown: sessions.length, total: listTotal })}
+          </div>
+        )}
 
         <div className="sessions-table">
           <div className="table-header">
@@ -147,13 +173,17 @@ export function Dashboard() {
               {t('dashboard.noSessions')}
             </div>
           ) : (
-            sessions.map(session => (
+            sessions.map(session => {
+              const displayName = sessionDisplayName(session);
+              return (
               <div key={session.id} className="table-row">
                 <div className="session-info-cell">
-                  <span className="session-id">{session.id.substring(0, 12)}</span>
-                  <span className="session-name" title={session.name}>
-                    {session.name}
+                  <span className="session-name" title={displayName}>
+                    {displayName}
                   </span>
+                  {session.status !== 'disconnected' && (
+                    <span className="session-id">{session.id.substring(0, 12)}</span>
+                  )}
                 </div>
                 <span className="phone">{session.phone || '—'}</span>
                 <span className={`status-pill ${session.status}`}>{formatStatus(session.status)}</span>
@@ -169,7 +199,8 @@ export function Dashboard() {
                   )}
                 </div>
               </div>
-            ))
+              );
+            })
           )}
         </div>
       </section>

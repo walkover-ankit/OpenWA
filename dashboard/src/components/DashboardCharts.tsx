@@ -18,6 +18,7 @@ import {
 import { BarChart3 } from 'lucide-react';
 import { useStatsMessagesQuery } from '../hooks/queries';
 import type { StatsPeriod } from '../services/api';
+import { fillTimeSeries } from '../utils/fillTimeSeries';
 import './DashboardCharts.css';
 
 const PERIODS: StatsPeriod[] = ['24h', '7d', '30d'];
@@ -71,12 +72,29 @@ export function DashboardCharts() {
   const forbidden = (error as (Error & { status?: number }) | null)?.status === 403;
   if (isError && forbidden) return null;
 
-  const timeSeries = (data?.timeSeries ?? []).map(p => ({ ...p, label: formatTick(p.timestamp, period) }));
+  const timeSeries = fillTimeSeries(data?.timeSeries ?? [], period).map(p => ({
+    ...p,
+    label: formatTick(p.timestamp, period),
+  }));
   const byType = Object.entries(data?.byType ?? {})
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
-  const topChats = (data?.topChats ?? []).slice(0, 8).map(c => ({ name: c.chatName || shortChat(c.chatId), count: c.messageCount }));
-  const hasData = timeSeries.length > 0 || byType.length > 0 || topChats.length > 0;
+  const topChats = (data?.topChats ?? []).slice(0, 8).map(c => ({
+    name: c.chatName || shortChat(c.chatId),
+    count: c.messageCount,
+  }));
+  const bySession = (data?.bySession ?? [])
+    .map(s => ({
+      name: s.name || s.sessionId.slice(0, 8),
+      sent: s.sent,
+      received: s.received,
+      total: s.sent + s.received,
+    }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 8);
+  // Only treat real API rows as "has data" — zero-filled series alone should not hide the empty state.
+  const hasData =
+    (data?.timeSeries?.length ?? 0) > 0 || byType.length > 0 || topChats.length > 0 || bySession.length > 0;
 
   return (
     <section className="dashboard-charts">
@@ -187,6 +205,29 @@ export function DashboardCharts() {
               </ResponsiveContainer>
             )}
           </div>
+
+          {bySession.length > 0 && (
+            <div className="chart-card chart-wide">
+              <h3>{t('dashboard.charts.bySession')}</h3>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={bySession} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="name" tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="sent" name={t('dashboard.charts.sent')} fill="#25d366" stackId="a" radius={[0, 0, 0, 0]} />
+                  <Bar
+                    dataKey="received"
+                    name={t('dashboard.charts.received')}
+                    fill="#3b82f6"
+                    stackId="a"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
       )}
     </section>

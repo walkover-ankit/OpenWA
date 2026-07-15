@@ -64,7 +64,12 @@ export function ApiKeys() {
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
 
   useEffect(() => {
-    setColumnVisibility({ key: !isSmall, lastUsed: !isMobile });
+    setColumnVisibility({
+      key: !isSmall,
+      usage: !isSmall,
+      expires: !isMobile,
+      lastUsed: !isMobile,
+    });
   }, [isMobile, isSmall]);
 
   const handleCreate = async () => {
@@ -151,6 +156,20 @@ export function ApiKeys() {
         cell: info => (
           <span className={`status-badge ${info.getValue() ? 'active' : 'inactive'}`}>
             {info.getValue() ? t('apiKeys.statuses.active') : t('apiKeys.statuses.revoked')}
+          </span>
+        ),
+      }),
+      columnHelper.accessor('usageCount', {
+        id: 'usage',
+        header: () => t('apiKeys.columns.usage', { defaultValue: 'Usage' }),
+        cell: info => <span className="usage-cell">{(info.getValue() ?? 0).toLocaleString()}</span>,
+      }),
+      columnHelper.accessor('expiresAt', {
+        id: 'expires',
+        header: () => t('apiKeys.columns.expires', { defaultValue: 'Expires' }),
+        cell: info => (
+          <span className="expires-cell">
+            {info.getValue() ? new Date(info.getValue()!).toLocaleDateString() : t('common.never')}
           </span>
         ),
       }),

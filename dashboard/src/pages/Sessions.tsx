@@ -10,6 +10,7 @@ import { useWebSocket } from '../hooks/useWebSocket';
 import { useRole } from '../hooks/useRole';
 import { PageHeader } from '../components/PageHeader';
 import { CustomSelect } from '../components/CustomSelect';
+import { sessionDisplayName } from '../utils/sessionDisplayName';
 import './Sessions.css';
 
 export function Sessions() {
@@ -79,6 +80,8 @@ export function Sessions() {
         );
         setSessions(sessionsRef.current);
         if (event.status === 'ready') {
+          // Refresh so the card picks up phone + WhatsApp account pushName from the API.
+          void fetchSessions();
           toast.success(t('sessions.toasts.readyTitle'), t('sessions.toasts.readyDesc'));
         } else if (event.status === 'disconnected') {
           toast.warning(t('sessions.toasts.disconnectedTitle'), t('sessions.toasts.disconnectedDesc'));
@@ -212,7 +215,7 @@ export function Sessions() {
       toast.success(
         t('sessions.delete.successTitle'),
         session
-          ? t('sessions.delete.successDescNamed', { name: session.name })
+          ? t('sessions.delete.successDescNamed', { name: sessionDisplayName(session) })
           : t('sessions.delete.successDescGeneric'),
       );
     } catch (err) {
@@ -305,9 +308,14 @@ export function Sessions() {
   const formatStatus = (status: string) => t(`sessionStatus.${status}`, { defaultValue: status });
 
   const filteredSessions = sessions.filter(s => {
+    const q = searchQuery.toLowerCase();
+    const display = sessionDisplayName(s).toLowerCase();
     const matchesSearch =
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.id.toLowerCase().includes(searchQuery.toLowerCase());
+      !q ||
+      display.includes(q) ||
+      s.name.toLowerCase().includes(q) ||
+      (s.pushName || '').toLowerCase().includes(q) ||
+      (s.status !== 'disconnected' && s.id.toLowerCase().includes(q));
     const matchesStatus =
       statusFilter === 'all' ||
       (statusFilter === 'active' && s.status === 'ready') ||
@@ -610,18 +618,26 @@ export function Sessions() {
               <div className="detail-grid">
                 <div className="detail-item">
                   <span className="detail-label">{t('sessions.details.name')}</span>
-                  <span className="detail-value">{selectedSession.name}</span>
+                  <span className="detail-value">{sessionDisplayName(selectedSession)}</span>
                 </div>
+                {selectedSession.pushName && selectedSession.pushName.trim() !== selectedSession.name && (
+                  <div className="detail-item">
+                    <span className="detail-label">{t('sessions.details.gatewayName')}</span>
+                    <span className="detail-value">{selectedSession.name}</span>
+                  </div>
+                )}
                 <div className="detail-item">
                   <span className="detail-label">{t('sessions.details.status')}</span>
                   <span className={`status-badge ${selectedSession.status}`}>
                     {formatStatus(selectedSession.status)}
                   </span>
                 </div>
-                <div className="detail-item">
-                  <span className="detail-label">{t('sessions.details.sessionId')}</span>
-                  <span className="detail-value mono">{selectedSession.id}</span>
-                </div>
+                {selectedSession.status !== 'disconnected' && (
+                  <div className="detail-item">
+                    <span className="detail-label">{t('sessions.details.sessionId')}</span>
+                    <span className="detail-value mono">{selectedSession.id}</span>
+                  </div>
+                )}
                 <div className="detail-item">
                   <span className="detail-label">{t('sessions.details.phone')}</span>
                   <span className="detail-value">{selectedSession.phone || t('sessions.details.phoneNone')}</span>
@@ -662,7 +678,12 @@ export function Sessions() {
               <p>
                 <Trans
                   i18nKey="sessions.delete.message"
-                  values={{ name: sessions.find(s => s.id === deleteConfirmId)?.name }}
+                  values={{
+                    name: (() => {
+                      const target = sessions.find(s => s.id === deleteConfirmId);
+                      return target ? sessionDisplayName(target) : deleteConfirmId;
+                    })(),
+                  }}
                   components={{ strong: <strong /> }}
                 />
               </p>
@@ -693,7 +714,12 @@ export function Sessions() {
               <p>
                 <Trans
                   i18nKey="sessions.forceKill.message"
-                  values={{ name: sessions.find(s => s.id === killConfirmId)?.name }}
+                  values={{
+                    name: (() => {
+                      const target = sessions.find(s => s.id === killConfirmId);
+                      return target ? sessionDisplayName(target) : killConfirmId;
+                    })(),
+                  }}
                   components={{ strong: <strong /> }}
                 />
               </p>
@@ -719,10 +745,12 @@ export function Sessions() {
             <p>{t('sessions.empty.description')}</p>
           </div>
         ) : (
-          filteredSessions.map(session => (
+          filteredSessions.map(session => {
+            const displayName = sessionDisplayName(session);
+            return (
             <div key={session.id} className="session-card">
               <div className="card-header">
-                <h3 title={session.name}>{session.name}</h3>
+                <h3 title={displayName}>{displayName}</h3>
                 <span className={`status-pill ${session.status}`}>{formatStatus(session.status)}</span>
               </div>
 
@@ -744,10 +772,12 @@ export function Sessions() {
                     <span className="info-label">{t('sessions.card.phone')}</span>
                     <span className="info-value">{session.phone || '—'}</span>
                   </div>
-                  <div className="info-row">
-                    <span className="info-label">{t('sessions.card.sessionId')}</span>
-                    <span className="info-value mono">{session.id.substring(0, 12)}</span>
-                  </div>
+                  {session.status !== 'disconnected' && (
+                    <div className="info-row">
+                      <span className="info-label">{t('sessions.card.sessionId')}</span>
+                      <span className="info-value mono">{session.id.substring(0, 12)}</span>
+                    </div>
+                  )}
                   <div className="info-row">
                     <span className="info-label">{t('sessions.card.lastActive')}</span>
                     <span className="info-value">{formatLastActive(session.lastActive)}</span>
@@ -799,7 +829,8 @@ export function Sessions() {
                 )}
               </div>
             </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>

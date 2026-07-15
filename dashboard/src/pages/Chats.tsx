@@ -39,6 +39,7 @@ import {
   messagesQueryKey,
 } from '../hooks/useChatMessages';
 import { useChatScrollPosition } from '../hooks/useChatScrollPosition';
+import { sessionDisplayName } from '../utils/sessionDisplayName';
 import MessageBody from '../components/chats/MessageBody';
 import MediaLightbox, { type LightboxItem } from '../components/chats/MediaLightbox';
 import './Chats.css';
@@ -781,7 +782,7 @@ export function Chats() {
                 >
                   {sessions.map(s => (
                     <option key={s.id} value={s.id}>
-                      {s.name} ({s.phone || t('chats.noPhone')})
+                      {sessionDisplayName(s)} ({s.phone || t('chats.noPhone')})
                     </option>
                   ))}
                 </select>

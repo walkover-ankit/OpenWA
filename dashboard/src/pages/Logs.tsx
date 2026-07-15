@@ -87,7 +87,9 @@ export function Logs() {
   const handleExportCsv = async () => {
     if (exporting) return;
     setExporting(true);
-    const PAGE = 500;
+    // Backend clamps audit pages to MAX_AUDIT_PAGE_SIZE (200). Requesting more still
+    // returns ≤200, so comparing to a larger PAGE would stop after the first page.
+    const PAGE = 200;
     const CAP = 50000;
     try {
       const all: AuditLog[] = [];
@@ -96,7 +98,7 @@ export function Logs() {
         const res = await auditApi.list({ severity: severityParam, limit: PAGE, offset });
         all.push(...res.data);
         offset += res.data.length;
-        if (res.data.length < PAGE || offset >= res.total || all.length >= CAP) break;
+        if (res.data.length === 0 || res.data.length < PAGE || offset >= res.total || all.length >= CAP) break;
       }
       const q = searchQuery.toLowerCase();
       const rows = q

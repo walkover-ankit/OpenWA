@@ -80,6 +80,8 @@ export function useStopSessionMutation() {
     mutationFn: (id: string) => sessionApi.stop(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.sessions });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.sessionStats });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.statsOverview });
     },
   });
 }

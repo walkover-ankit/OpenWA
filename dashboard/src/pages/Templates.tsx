@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Check, Copy, FileText, Loader2, Plus, Search, Trash2, X } from 'lucide-react';
 import { type MessageTemplate, type TemplatePayload } from '../services/api';
@@ -13,6 +13,7 @@ import {
 } from '../hooks/queries';
 import { PageHeader } from '../components/PageHeader';
 import { copyToClipboard } from '../utils/clipboard';
+import { sessionDisplayName } from '../utils/sessionDisplayName';
 import './Templates.css';
 
 type TemplateForm = {
@@ -22,6 +23,8 @@ type TemplateForm = {
   footer: string;
 };
 
+type TemplateField = 'header' | 'body' | 'footer';
+
 const emptyForm: TemplateForm = {
   name: '',
   header: '',
@@ -29,7 +32,9 @@ const emptyForm: TemplateForm = {
   footer: '',
 };
 
-function extractPlaceholders(template: TemplateForm | MessageTemplate) {
+const VARIABLE_NAME_PATTERN = /^[a-zA-Z0-9_.-]+$/;
+
+export function extractPlaceholders(template: TemplateForm | MessageTemplate) {
   const source = [template.header, template.body, template.footer].filter(Boolean).join('\n');
   return Array.from(new Set(Array.from(source.matchAll(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g), match => match[1]))).sort();
 }
@@ -50,6 +55,27 @@ function renderPreview(template: TemplateForm, values: Record<string, string>) {
     .replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (_match, key: string) => values[key] || `{{${key}}}`);
 }
 
+function insertAtCursor(
+  value: string,
+  insertion: string,
+  start: number,
+  end: number,
+): { next: string; caret: number } {
+  const safeStart = Math.max(0, Math.min(start, value.length));
+  const safeEnd = Math.max(safeStart, Math.min(end, value.length));
+  const next = `${value.slice(0, safeStart)}${insertion}${value.slice(safeEnd)}`;
+  return { next, caret: safeStart + insertion.length };
+}
+
+function removePlaceholder(text: string, key: string): string {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text
+    .replace(new RegExp(`\\{\\{\\s*${escaped}\\s*\\}\\}`, 'g'), '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export function Templates() {
   const { t } = useTranslation();
   useDocumentTitle(t('templates.title'));
@@ -62,6 +88,18 @@ export function Templates() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [previewValues, setPreviewValues] = useState<Record<string, string>>({});
   const [searchTerm, setSearchTerm] = useState('');
+  const [variableName, setVariableName] = useState('');
+  const [variableError, setVariableError] = useState<string | null>(null);
+  const [insertTarget, setInsertTarget] = useState<TemplateField>('body');
+
+  const headerRef = useRef<HTMLInputElement>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const footerRef = useRef<HTMLInputElement>(null);
+  const selectionRef = useRef<{ field: TemplateField; start: number; end: number }>({
+    field: 'body',
+    start: 0,
+    end: 0,
+  });
 
   const { data: templates = [], isLoading: loadingTemplates } = useTemplatesQuery(selectedSessionId, !!selectedSessionId);
   const createMutation = useCreateTemplateMutation();
@@ -104,10 +142,71 @@ export function Templates() {
     });
   }, [placeholders]);
 
+  const rememberSelection = (field: TemplateField) => {
+    const el =
+      field === 'header' ? headerRef.current : field === 'body' ? bodyRef.current : footerRef.current;
+    if (!el) return;
+    selectionRef.current = {
+      field,
+      start: el.selectionStart ?? el.value.length,
+      end: el.selectionEnd ?? el.value.length,
+    };
+    setInsertTarget(field);
+  };
+
+  const focusField = (field: TemplateField, caret: number) => {
+    const el =
+      field === 'header' ? headerRef.current : field === 'body' ? bodyRef.current : footerRef.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(caret, caret);
+    selectionRef.current = { field, start: caret, end: caret };
+  };
+
+  const insertVariableInto = (key: string, field: TemplateField = insertTarget) => {
+    const token = `{{${key}}}`;
+    const selection =
+      selectionRef.current.field === field
+        ? selectionRef.current
+        : { field, start: form[field].length, end: form[field].length };
+    const { next, caret } = insertAtCursor(form[field], token, selection.start, selection.end);
+    setForm({ ...form, [field]: next });
+    setInsertTarget(field);
+    requestAnimationFrame(() => focusField(field, caret));
+  };
+
+  const handleAddVariable = () => {
+    const key = variableName.trim();
+    if (!key) {
+      setVariableError(t('templates.variables.required'));
+      return;
+    }
+    if (!VARIABLE_NAME_PATTERN.test(key)) {
+      setVariableError(t('templates.variables.invalidName'));
+      return;
+    }
+    setVariableError(null);
+    insertVariableInto(key);
+    setVariableName('');
+  };
+
+  const handleRemoveVariable = (key: string) => {
+    setForm({
+      ...form,
+      header: removePlaceholder(form.header, key),
+      body: removePlaceholder(form.body, key),
+      footer: removePlaceholder(form.footer, key),
+    });
+  };
+
   const resetForm = () => {
     setForm(emptyForm);
     setEditingTemplate(null);
     setPreviewValues({});
+    setVariableName('');
+    setVariableError(null);
+    setInsertTarget('body');
+    selectionRef.current = { field: 'body', start: 0, end: 0 };
   };
 
   const openEdit = (template: MessageTemplate) => {
@@ -118,6 +217,9 @@ export function Templates() {
       body: template.body,
       footer: template.footer || '',
     });
+    setVariableName('');
+    setVariableError(null);
+    setInsertTarget('body');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -208,7 +310,7 @@ export function Templates() {
             {sessions.length === 0 && <option value="">{t('templates.noSessions')}</option>}
             {sessions.map(session => (
               <option key={session.id} value={session.id}>
-                {session.name}
+                {sessionDisplayName(session)}
               </option>
             ))}
           </select>
@@ -289,7 +391,11 @@ export function Templates() {
             <div className="template-editor-header">
               <div>
                 <h2>{editingTemplate ? t('templates.editTitle') : t('templates.createTitle')}</h2>
-                <p>{selectedSession ? t('templates.sessionHint', { name: selectedSession.name }) : ''}</p>
+                <p>
+                  {selectedSession
+                    ? t('templates.sessionHint', { name: sessionDisplayName(selectedSession) })
+                    : ''}
+                </p>
               </div>
               <div className="template-header-actions">
                 {editingTemplate && (
@@ -330,8 +436,13 @@ export function Templates() {
                 <div className="form-group">
                   <label>{t('templates.header')}</label>
                   <input
+                    ref={headerRef}
                     value={form.header}
                     onChange={event => setForm({ ...form, header: event.target.value })}
+                    onSelect={() => rememberSelection('header')}
+                    onClick={() => rememberSelection('header')}
+                    onKeyUp={() => rememberSelection('header')}
+                    onFocus={() => rememberSelection('header')}
                     placeholder={t('templates.headerPlaceholder')}
                     disabled={!canWrite}
                   />
@@ -340,8 +451,13 @@ export function Templates() {
                 <div className="form-group body-field">
                   <label>{t('templates.body')}</label>
                   <textarea
+                    ref={bodyRef}
                     value={form.body}
                     onChange={event => setForm({ ...form, body: event.target.value })}
+                    onSelect={() => rememberSelection('body')}
+                    onClick={() => rememberSelection('body')}
+                    onKeyUp={() => rememberSelection('body')}
+                    onFocus={() => rememberSelection('body')}
                     placeholder={t('templates.bodyPlaceholder')}
                     rows={10}
                     disabled={!canWrite}
@@ -351,12 +467,100 @@ export function Templates() {
                 <div className="form-group">
                   <label>{t('templates.footer')}</label>
                   <input
+                    ref={footerRef}
                     value={form.footer}
                     onChange={event => setForm({ ...form, footer: event.target.value })}
+                    onSelect={() => rememberSelection('footer')}
+                    onClick={() => rememberSelection('footer')}
+                    onKeyUp={() => rememberSelection('footer')}
+                    onFocus={() => rememberSelection('footer')}
                     placeholder={t('templates.footerPlaceholder')}
                     disabled={!canWrite}
                   />
                 </div>
+              </div>
+
+              <div className="template-variables-box">
+                <div className="template-variables-header">
+                  <div>
+                    <h3>{t('templates.variables.title')}</h3>
+                    <p>{t('templates.variables.hint')}</p>
+                  </div>
+                </div>
+
+                <div className="template-variables-add">
+                  <div className="form-group">
+                    <label htmlFor="template-variable-name">{t('templates.variables.nameLabel')}</label>
+                    <input
+                      id="template-variable-name"
+                      value={variableName}
+                      onChange={event => {
+                        setVariableName(event.target.value);
+                        if (variableError) setVariableError(null);
+                      }}
+                      onKeyDown={event => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          handleAddVariable();
+                        }
+                      }}
+                      placeholder={t('templates.variables.namePlaceholder')}
+                      disabled={!canWrite}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="template-variable-target">{t('templates.variables.target')}</label>
+                    <select
+                      id="template-variable-target"
+                      value={insertTarget}
+                      onChange={event => setInsertTarget(event.target.value as TemplateField)}
+                      disabled={!canWrite}
+                    >
+                      <option value="body">{t('templates.variables.targetBody')}</option>
+                      <option value="header">{t('templates.variables.targetHeader')}</option>
+                      <option value="footer">{t('templates.variables.targetFooter')}</option>
+                    </select>
+                  </div>
+                  <button
+                    className="btn-secondary template-add-variable-btn"
+                    type="button"
+                    onClick={handleAddVariable}
+                    disabled={!canWrite}
+                  >
+                    <Plus size={16} />
+                    {t('templates.variables.add')}
+                  </button>
+                </div>
+                {variableError && <p className="template-variable-error">{variableError}</p>}
+
+                {placeholders.length > 0 ? (
+                  <div className="template-variable-chips" role="list">
+                    {placeholders.map(key => (
+                      <div key={key} className="template-variable-chip" role="listitem">
+                        <code>{`{{${key}}}`}</code>
+                        <button
+                          type="button"
+                          className="chip-action"
+                          disabled={!canWrite}
+                          onClick={() => insertVariableInto(key)}
+                        >
+                          {t('templates.variables.insert')}
+                        </button>
+                        <button
+                          type="button"
+                          className="chip-action danger"
+                          disabled={!canWrite}
+                          title={t('templates.variables.remove')}
+                          onClick={() => handleRemoveVariable(key)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="template-muted">{t('templates.variables.empty')}</p>
+                )}
               </div>
 
               <div className="template-editor-actions">
@@ -370,7 +574,9 @@ export function Templates() {
                   type="button"
                 >
                   {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
-                  {canWrite ? t(editingTemplate ? 'templates.saveChanges' : 'templates.createTemplate') : t('templates.viewOnly')}
+                  {canWrite
+                    ? t(editingTemplate ? 'templates.saveChanges' : 'templates.createTemplate')
+                    : t('templates.viewOnly')}
                 </button>
               </div>
             </div>

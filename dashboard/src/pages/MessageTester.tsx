@@ -6,6 +6,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useRole } from '../hooks/useRole';
 import { useSessionsQuery, useSessionGroupsQuery } from '../hooks/queries';
 import { PageHeader } from '../components/PageHeader';
+import { sessionDisplayName } from '../utils/sessionDisplayName';
 import './MessageTester.css';
 
 interface ApiResponse {
@@ -136,7 +137,7 @@ export function MessageTester() {
               {sessions.length === 0 && <option value="">{t('messageTester.noReadySessions')}</option>}
               {sessions.map(s => (
                 <option key={s.id} value={s.id}>
-                  {s.name} ({s.phone || t('messageTester.sessionOptionPhoneNone')})
+                  {sessionDisplayName(s)} ({s.phone || t('messageTester.sessionOptionPhoneNone')})
                 </option>
               ))}
             </select>
