@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
 import { Plus, QrCode, RefreshCw, Trash2, Eye, Loader2, Play, Square, X, Search, Filter, Skull } from 'lucide-react';
 import { sessionApi, type Session } from '../services/api';
@@ -19,6 +20,7 @@ export function Sessions() {
   const toast = useToast();
   const { canWrite } = useRole();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -107,6 +109,18 @@ export function Sessions() {
     fetchSessions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Deep-link from Dashboard "View": /sessions?session=<id> opens that session's details.
+  useEffect(() => {
+    const id = searchParams.get('session');
+    if (!id || sessions.length === 0) return;
+    const match = sessions.find(s => s.id === id);
+    if (!match) return;
+    setSelectedSession(match);
+    const next = new URLSearchParams(searchParams);
+    next.delete('session');
+    setSearchParams(next, { replace: true });
+  }, [sessions, searchParams, setSearchParams]);
 
   const qrRefreshInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const currentSessionName = useRef<string>('');
@@ -306,6 +320,12 @@ export function Sessions() {
   };
 
   const formatStatus = (status: string) => t(`sessionStatus.${status}`, { defaultValue: status });
+
+  // Details modal holds a snapshot at open time — always prefer the live row so a disconnect
+  // while the modal is open hides Session ID (and refreshes status) immediately.
+  const detailsSession = selectedSession
+    ? (sessions.find(s => s.id === selectedSession.id) ?? selectedSession)
+    : null;
 
   const filteredSessions = sessions.filter(s => {
     const q = searchQuery.toLowerCase();
@@ -605,7 +625,7 @@ export function Sessions() {
         </div>
       )}
 
-      {selectedSession && (
+      {detailsSession && (
         <div className="modal-overlay" onClick={() => setSelectedSession(null)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
@@ -618,39 +638,39 @@ export function Sessions() {
               <div className="detail-grid">
                 <div className="detail-item">
                   <span className="detail-label">{t('sessions.details.name')}</span>
-                  <span className="detail-value">{sessionDisplayName(selectedSession)}</span>
+                  <span className="detail-value">{sessionDisplayName(detailsSession)}</span>
                 </div>
-                {selectedSession.pushName && selectedSession.pushName.trim() !== selectedSession.name && (
+                {detailsSession.pushName && detailsSession.pushName.trim() !== detailsSession.name && (
                   <div className="detail-item">
                     <span className="detail-label">{t('sessions.details.gatewayName')}</span>
-                    <span className="detail-value">{selectedSession.name}</span>
+                    <span className="detail-value">{detailsSession.name}</span>
                   </div>
                 )}
                 <div className="detail-item">
                   <span className="detail-label">{t('sessions.details.status')}</span>
-                  <span className={`status-badge ${selectedSession.status}`}>
-                    {formatStatus(selectedSession.status)}
+                  <span className={`status-badge ${detailsSession.status}`}>
+                    {formatStatus(detailsSession.status)}
                   </span>
                 </div>
-                {selectedSession.status !== 'disconnected' && (
+                {detailsSession.status !== 'disconnected' && (
                   <div className="detail-item">
                     <span className="detail-label">{t('sessions.details.sessionId')}</span>
-                    <span className="detail-value mono">{selectedSession.id}</span>
+                    <span className="detail-value mono">{detailsSession.id}</span>
                   </div>
                 )}
                 <div className="detail-item">
                   <span className="detail-label">{t('sessions.details.phone')}</span>
-                  <span className="detail-value">{selectedSession.phone || t('sessions.details.phoneNone')}</span>
+                  <span className="detail-value">{detailsSession.phone || t('sessions.details.phoneNone')}</span>
                 </div>
                 <div className="detail-item">
                   <span className="detail-label">{t('sessions.details.created')}</span>
-                  <span className="detail-value">{new Date(selectedSession.createdAt).toLocaleString()}</span>
+                  <span className="detail-value">{new Date(detailsSession.createdAt).toLocaleString()}</span>
                 </div>
                 <div className="detail-item">
                   <span className="detail-label">{t('sessions.details.lastActive')}</span>
                   <span className="detail-value">
-                    {selectedSession.lastActive
-                      ? new Date(selectedSession.lastActive).toLocaleString()
+                    {detailsSession.lastActive
+                      ? new Date(detailsSession.lastActive).toLocaleString()
                       : t('common.never')}
                   </span>
                 </div>

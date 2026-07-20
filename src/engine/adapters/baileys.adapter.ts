@@ -768,7 +768,11 @@ export class BaileysAdapter implements IWhatsAppEngine {
   async getProfilePicture(contactId: string): Promise<string | null> {
     this.ensureReady();
     try {
-      return (await this.sock!.profilePictureUrl(contactId, 'image')) ?? null;
+      // API callers pass neutral `<phone>@c.us`; Baileys profilePictureUrl expects the wire
+      // dialect (`@s.whatsapp.net` or `@lid`). Without this fold, neutral ids fail and we
+      // silently return null — looking like "profile picture API broken".
+      const jid = await this.toDeliverableJid(contactId);
+      return (await this.sock!.profilePictureUrl(jid, 'image')) ?? null;
     } catch (err) {
       this.logger.debug('profilePictureUrl failed; no picture or hidden', {
         contactId,
@@ -780,12 +784,12 @@ export class BaileysAdapter implements IWhatsAppEngine {
 
   async blockContact(contactId: string): Promise<void> {
     this.ensureReady();
-    await this.sock!.updateBlockStatus(contactId, 'block');
+    await this.sock!.updateBlockStatus(await this.toDeliverableJid(contactId), 'block');
   }
 
   async unblockContact(contactId: string): Promise<void> {
     this.ensureReady();
-    await this.sock!.updateBlockStatus(contactId, 'unblock');
+    await this.sock!.updateBlockStatus(await this.toDeliverableJid(contactId), 'unblock');
   }
 
   // ----- Contacts & chats -----
@@ -1535,9 +1539,12 @@ export class BaileysAdapter implements IWhatsAppEngine {
     try {
       const pn = this.sessionStore.toEngineJid(chatId);
       const lid = await this.sock?.signalRepository?.lidMapping?.getLIDForPN(pn);
-      return lid ?? chatId;
+      // Prefer LID when known; otherwise the engine PN (`@s.whatsapp.net`), never the neutral
+      // `@c.us` form — Baileys rejects / no-ops several ops (profile pic, block, some sends)
+      // when handed a raw `c.us` server suffix.
+      return lid ?? pn;
     } catch {
-      return chatId; // resolution is best-effort; an unmapped contact sends to the PN as before
+      return this.sessionStore.toEngineJid(chatId); // best-effort fold to wire dialect
     }
   }
 

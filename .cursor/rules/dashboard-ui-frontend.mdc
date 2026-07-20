@@ -1,0 +1,14 @@
+---
+description: All frontend/dashboard UI work must go in dashboard-ui/, not dashboard/
+alwaysApply: true
+---
+
+# Frontend target: dashboard-ui
+
+When making **any frontend / dashboard UI changes** in this repo:
+
+- Edit **only** `dashboard-ui/` (React + Vite app).
+- Do **not** modify `dashboard/` unless the user explicitly asks to change the stock/upstream dashboard.
+- Keep the same stack and structure as `dashboard-ui` (React, TypeScript, Vite, etc.).
+- Run/dev scripts for this UI: `npm run dashboard-ui:dev`, `npm run dashboard-ui:build`, or `npm run dev:ui`.
+- Port: **2887** for `dashboard-ui` (stock `dashboard` stays on 2886).
