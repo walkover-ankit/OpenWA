@@ -189,7 +189,10 @@ export function Dashboard() {
                 <span className={`status-pill ${session.status}`}>{formatStatus(session.status)}</span>
                 <span className="last-active">{formatLastActive(session.lastActive)}</span>
                 <div className="actions">
-                  <button className="btn-sm" onClick={() => navigate('/sessions')}>
+                  <button
+                    className="btn-sm"
+                    onClick={() => navigate(`/sessions?session=${encodeURIComponent(session.id)}`)}
+                  >
                     {t('dashboard.view')}
                   </button>
                   {['ready', 'initializing', 'connecting', 'qr_ready'].includes(session.status) && (

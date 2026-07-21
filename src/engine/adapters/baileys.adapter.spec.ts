@@ -642,7 +642,8 @@ describe('BaileysAdapter messaging', () => {
     fakeSock.signalRepository = { lidMapping: { getLIDForPN: jest.fn().mockResolvedValue(null) } };
     const adapter = await readyAdapter();
     await adapter.sendTextMessage('628111@c.us', 'hello');
-    expect(fakeSock.sendMessage).toHaveBeenCalledWith('628111@c.us', { text: 'hello' });
+    // Neutral @c.us folds to Baileys wire @s.whatsapp.net when no LID is known.
+    expect(fakeSock.sendMessage).toHaveBeenCalledWith('628111@s.whatsapp.net', { text: 'hello' });
   });
 
   it('sendTextMessage honors the chat disappearing timer when one is cached (#473)', async () => {
@@ -2019,12 +2020,25 @@ describe('BaileysAdapter profile + block', () => {
     expect(await adapter.getProfilePicture('628222@s.whatsapp.net')).toBeNull();
   });
 
+  it('getProfilePicture folds neutral @c.us to @s.whatsapp.net before lookup', async () => {
+    fakeSock.profilePictureUrl.mockResolvedValueOnce('https://pps/y.jpg');
+    const adapter = await ready();
+    expect(await adapter.getProfilePicture('918963968419@c.us')).toBe('https://pps/y.jpg');
+    expect(fakeSock.profilePictureUrl).toHaveBeenCalledWith('918963968419@s.whatsapp.net', 'image');
+  });
+
   it('blockContact / unblockContact call updateBlockStatus', async () => {
     const adapter = await ready();
     await adapter.blockContact('628111@s.whatsapp.net');
     expect(fakeSock.updateBlockStatus).toHaveBeenCalledWith('628111@s.whatsapp.net', 'block');
     await adapter.unblockContact('628111@s.whatsapp.net');
     expect(fakeSock.updateBlockStatus).toHaveBeenCalledWith('628111@s.whatsapp.net', 'unblock');
+  });
+
+  it('blockContact folds neutral @c.us to @s.whatsapp.net', async () => {
+    const adapter = await ready();
+    await adapter.blockContact('918963968419@c.us');
+    expect(fakeSock.updateBlockStatus).toHaveBeenCalledWith('918963968419@s.whatsapp.net', 'block');
   });
 });
 
